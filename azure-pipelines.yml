@@ -1,0 +1,184 @@
+trigger:
+  - main
+
+variables:
+  SERVICECONNECTION: 'Azure subscription 1(945a5939-f994-4...'  # paste exact name from your service connections page
+
+stages:
+
+  - stage: Build
+    displayName: 'Build Stage'
+    jobs:
+      - job: Build
+        displayName: 'Terraform CI'
+        pool:
+          vmImage: 'ubuntu-latest'
+        steps:
+
+          - task: TerraformInstaller@1
+            displayName: 'tf install'
+            inputs:
+              terraformVersion: 'latest'
+
+          - task: TerraformTaskV4@4
+            displayName: 'tf init'
+            inputs:
+              provider: 'azurerm'
+              command: 'init'
+              backendServiceArm: '$(SERVICECONNECTION)'
+              backendAzureRmResourceGroupName: 'demo-resource'
+              backendAzureRmStorageAccountName: 'trainwithafrahh'
+              backendAzureRmContainerName: 'tfstate'
+              backendAzureRmKey: 'terraform.tfstate'
+
+          - task: TerraformTaskV4@4
+            displayName: 'tf validate'
+            inputs:
+              provider: 'azurerm'
+              command: 'validate'
+
+          - task: TerraformTaskV4@4
+            displayName: 'tf fmt'
+            inputs:
+              provider: 'azurerm'
+              command: 'custom'
+              customCommand: 'fmt'
+              commandOptions: '-check -recursive'
+              outputTo: 'console'
+              environmentServiceNameAzureRM: '$(SERVICECONNECTION)'
+
+          - task: TerraformTaskV4@4
+            displayName: 'tf plan'
+            inputs:
+              provider: 'azurerm'
+              command: 'plan'
+              commandOptions: '-out $(Build.SourcesDirectory)/tfplanfile'
+              environmentServiceNameAzureRM: '$(SERVICECONNECTION)'
+
+          - task: ArchiveFiles@2
+            displayName: 'tf archive'
+            inputs:
+              rootFolderOrFile: '$(Build.SourcesDirectory)/'
+              includeRootFolder: false
+              archiveType: 'zip'
+              archiveFile: '$(Build.ArtifactStagingDirectory)/$(Build.BuildId).zip'
+              replaceExistingArchive: true
+
+          - task: PublishBuildArtifacts@1
+            displayName: 'tf publish'
+            inputs:
+              PathtoPublish: '$(Build.ArtifactStagingDirectory)'
+              ArtifactName: '$(Build.BuildId)-build'
+              publishLocation: 'Container'
+
+  - stage: Deploy
+    displayName: 'Deploy Stage'
+    dependsOn: Build
+    condition: succeeded()
+    jobs:
+      - deployment: Deploy
+        displayName: 'Terraform Apply'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'production'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                - task: TerraformInstaller@1
+                  displayName: 'tf install'
+                  inputs:
+                    terraformVersion: 'latest'
+
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Get Artifacts'
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'single'
+                    artifactName: '$(Build.BuildId)-build'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: ExtractFiles@1
+                  displayName: 'Extract files'
+                  inputs:
+                    archiveFilePatterns: '$(System.ArtifactsDirectory)/$(Build.BuildId)-build/$(Build.BuildId).zip'
+                    destinationFolder: '$(System.DefaultWorkingDirectory)/terraform'
+                    cleanDestinationFolder: true
+
+                - task: TerraformTaskV4@4
+                  displayName: 'tf init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+                    backendServiceArm: '$(SERVICECONNECTION)'
+                    backendAzureRmResourceGroupName: 'demo-resource'
+                    backendAzureRmStorageAccountName: 'trainwithafrahh'
+                    backendAzureRmContainerName: 'tfstate'
+                    backendAzureRmKey: 'terraform.tfstate'
+
+                - task: TerraformTaskV4@4
+                  displayName: 'tf apply'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'apply'
+                    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+                    commandOptions: '-auto-approve tfplanfile'
+                    environmentServiceNameAzureRM: '$(SERVICECONNECTION)'
+
+  - stage: Destroy
+    displayName: 'Destroy Stage'
+    dependsOn: Deploy
+    condition: succeeded()
+    jobs:
+      - deployment: Destroy
+        displayName: 'Terraform Destroy'
+        pool:
+          vmImage: 'ubuntu-latest'
+        environment: 'production-destroy'
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+
+                - task: TerraformInstaller@1
+                  displayName: 'tf install'
+                  inputs:
+                    terraformVersion: 'latest'
+
+                - task: DownloadBuildArtifacts@1
+                  displayName: 'Get Artifacts'
+                  inputs:
+                    buildType: 'current'
+                    downloadType: 'single'
+                    artifactName: '$(Build.BuildId)-build'
+                    downloadPath: '$(System.ArtifactsDirectory)'
+
+                - task: ExtractFiles@1
+                  displayName: 'Extract files'
+                  inputs:
+                    archiveFilePatterns: '$(System.ArtifactsDirectory)/$(Build.BuildId)-build/$(Build.BuildId).zip'
+                    destinationFolder: '$(System.DefaultWorkingDirectory)/terraform'
+                    cleanDestinationFolder: true
+
+                - task: TerraformTaskV4@4
+                  displayName: 'tf init'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'init'
+                    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+                    backendServiceArm: '$(SERVICECONNECTION)'
+                    backendAzureRmResourceGroupName: 'demo-resource'
+                    backendAzureRmStorageAccountName: 'trainwithafrahh'
+                    backendAzureRmContainerName: 'tfstate'
+                    backendAzureRmKey: 'terraform.tfstate'
+
+                - task: TerraformTaskV4@4
+                  displayName: 'tf destroy'
+                  inputs:
+                    provider: 'azurerm'
+                    command: 'destroy'
+                    workingDirectory: '$(System.DefaultWorkingDirectory)/terraform'
+                    commandOptions: '-auto-approve'
+                    environmentServiceNameAzureRM: '$(SERVICECONNECTION)'
