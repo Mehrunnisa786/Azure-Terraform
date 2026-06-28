@@ -2,7 +2,7 @@ trigger:
   - main
 
 variables:
-  SERVICECONNECTION: 'Azure subscription 1(945a5939-f994-4...'  # paste exact name from your service connections page
+  SERVICECONNECTION: 'Azure subscription 1(1)(945a5939-f994-4cc8-9fbb-65f8e87eaf5a)'
 
 stages:
 
