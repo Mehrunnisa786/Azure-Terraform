@@ -1,0 +1,2 @@
+location = "SouthIndia"
+prefixx  = "demo"
