@@ -3,3 +3,6 @@
 terraform.tfstate*
 *.tfvars
 secrrets.txt
+secrets.txt
+*.tfvars
+.terraform/
